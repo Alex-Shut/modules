@@ -51,14 +51,16 @@ function my_todo_page_form($form, &$form_state) {
     else {
       $step_to_do = '';
     }
+
     // creating title checkbox
+    $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid)
+      . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name']
+      . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'];
     if ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 0) {
-      $title_check = l($form_state['build_info']['args'][0][$i]->title,
-        'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name']
-        . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . $step_to_do;
+       $title_check .= $step_to_do;
     }
     elseif ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 1) {
-      $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name'] . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . ' <b>done</b>';
+      $title_check .= ' <b>done</b>';
     }
 
     $form['check_to-do' . $i] = array(
@@ -99,6 +101,7 @@ function my_todo_forms($form_id,$args) {
 function my_todo_page_form_submit($form, &$form_state) {
   foreach($form_state['my_todo_chekers'] as $key => $val) {
     if (isset($form_state['my_todo_chekers'][$key]) && $form_state['values'][$key]) {
+      //FIXME - count(isset( - what?
       if ($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] == count(isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) || !isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) {
         db_merge('field_data_field_status')
           ->key(array('entity_id' => $form_state['values'][$key]))
