@@ -1,0 +1,175 @@
+<?php
+/**
+ * Implements hook_menu().
+ *
+ */
+function my_todo_menu() {
+  $list = db_select('taxonomy_term_data', 't')
+  ->fields('t', array('name'))
+  ->condition('t.vid', 2)
+  ->execute()
+  ->fetchAll();
+
+  $items['todo_list'] = array(
+    'title' => 'To-do lists',
+    'page callback' => 'todo_list_render',
+    'access callback' => TRUE,
+  );
+
+  $items['todo_list/default'] = array(
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'title' => 'all',
+    'access callback' => TRUE,
+    'weight' => 1,
+  );
+
+  foreach ($list as $value) {
+    $items['todo_list/' . $value->name] = array(
+      'type' => MENU_LOCAL_TASK,
+      'title' => $value->name,
+      'page callback' => 'todo_list_render',
+      'access callback' => TRUE,
+      'weight' => 2,
+    );
+  }
+
+  return $items;
+}
+
+/**
+ * Creating form
+ *
+ */
+function my_todo_page_form($form, &$form_state) {
+// generation checkbox's
+  for ($i=0; $i < count($form_state['build_info']['args'][0]); $i++) {
+// вывод этапов выполнения, если есть
+    if (isset($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'])) {
+      $step_complete = $form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'];
+
+      $step_to_do = '<br>' . $form_state['build_info']['args'][0][0]->field_detailed['und'][$step_complete]['value'];
+    }
+    else { $step_to_do = ''; }
+// creating title checkbox
+    if ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 0) {
+      $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name'] . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . $step_to_do;
+    }
+    elseif ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 1) {
+      $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name'] . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . ' <b>done</b>';
+    }
+
+    $form['check_to-do' . $i] = array(
+      '#type' => 'checkbox',
+      '#title' => t($title_check),
+      '#return_value' => $form_state['build_info']['args'][0][$i]->nid,
+    );
+
+    $form_state['my_todo_chekers']['check_to-do' . $i] = $form_state['build_info']['args'][0][$i]->nid;
+  }
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Selekt'),
+  );
+
+  // dpm($form_state);
+  return ($form);
+}
+
+/**
+ * Implements hook_forms().
+ *
+ */
+function my_todo_forms($form_id,$args) {
+  $forms = array();
+  if (strpos($form_id,'my_todo_page_form') === 0) {
+    $forms[$form_id] = array(
+      'callback' => 'my_todo_page_form',
+      'callback arguments' => $args,
+    );
+  }
+  return $forms;
+}
+
+/**
+ * Creating form_submit
+ *
+ */
+function my_todo_page_form_submit($form, &$form_state) {
+  foreach($form_state['my_todo_chekers'] as $key => $val) {
+    if(isset($form_state['my_todo_chekers'][$key]) && $form_state['values'][$key]) {
+      if ($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] == count(isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) || !isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) {
+        db_merge('field_data_field_status')
+          ->key(array('entity_id' => $form_state['values'][$key]))
+          ->fields(array('field_status_value' => '1'))
+          ->execute();
+      }
+      else {
+        $field_step_complete_new_value = $form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] + 1;
+        db_merge('field_data_field_step_complete')
+          ->key(array('entity_id' => $form_state['values'][$key]))
+          ->fields(array('field_step_complete_value' => $field_step_complete_new_value))
+          ->execute();
+      }
+      drupal_set_message($form_state['values'][$key]);
+    }
+  }
+}
+
+/**
+ * Creating custom page to-do's
+ *
+ */
+function todo_list_render() {
+  $nodes = node_load_multiple(array(), array('type' => 'to_do', 'status' => 1));
+  $taxonomy_todo = taxonomy_term_load_multiple(array(), array('vid' => '2'));
+  $value_date = FALSE;
+
+  foreach ($nodes as $nid => $value) {
+    if ($value->field_date_task['und'][0]['value'] != $value->field_date_task['und'][0]['value2']) {
+      foreach ($taxonomy_todo as $tid => $value_t) {
+        if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
+          $value->field_subject['und'][0]['t_name'] = $value_t->name;
+        }
+      }
+
+      $result_array_nodes_long[] = $value;
+    }
+
+    if ($value->field_date_task['und'][0]['value'] == $value->field_date_task['und'][0]['value2']) {
+      if ($value_date != $value->field_date_task['und'][0]['value']) {
+        $value_date = $value->field_date_task['und'][0]['value'];
+        foreach ($taxonomy_todo as $tid => $value_t) {
+          if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
+            $value->field_subject['und'][0]['t_name'] = $value_t->name;
+          }
+        }
+        $result_array_nodes[$value_date][] = $value;
+      }
+      else {
+        foreach ($taxonomy_todo as $tid => $value_t) {
+          if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
+            $value->field_subject['und'][0]['t_name'] = $value_t->name;
+          }
+        }
+        $result_array_nodes[$value_date][] = $value;
+      }
+    }
+  }
+
+  $output[] = array(
+    '#markup' => '<b>Duration of the project</b>'
+  );
+  $output[] = drupal_get_form('my_todo_page_form', $result_array_nodes_long);
+
+$q = 0;
+  foreach ($result_array_nodes as $key => $value) {
+    $output[] = array(
+    '#markup' => format_date($value[0]->field_date_task['und'][0]['value'], 'custom', 'j M Y')
+    );
+    $output[] = drupal_get_form('my_todo_page_form'.$q, $value);
+    $q++;
+  }
+
+  return $output;
+}
