@@ -1,4 +1,3 @@
-name = my_todo
+name = My Todo
 description = Dev-module. Add to-do lists.
-package = DEV
 core = 7.x

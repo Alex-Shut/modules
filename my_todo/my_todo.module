@@ -1,15 +1,9 @@
 <?php
+
 /**
  * Implements hook_menu().
- *
  */
 function my_todo_menu() {
-  $list = db_select('taxonomy_term_data', 't')
-  ->fields('t', array('name'))
-  ->condition('t.vid', 2)
-  ->execute()
-  ->fetchAll();
-
   $items['todo_list'] = array(
     'title' => 'To-do lists',
     'page callback' => 'todo_list_render',
@@ -23,6 +17,11 @@ function my_todo_menu() {
     'weight' => 1,
   );
 
+  $list = db_select('taxonomy_term_data', 't')
+    ->fields('t', array('name'))
+    ->condition('t.vid', 2)
+    ->execute()
+    ->fetchAll();
   foreach ($list as $value) {
     $items['todo_list/' . $value->name] = array(
       'type' => MENU_LOCAL_TASK,
@@ -37,22 +36,26 @@ function my_todo_menu() {
 }
 
 /**
- * Creating form
- *
+ * Creating form.
  */
 function my_todo_page_form($form, &$form_state) {
-// generation checkbox's
-  for ($i=0; $i < count($form_state['build_info']['args'][0]); $i++) {
-// вывод этапов выполнения, если есть
+  // generation checkbox's
+  $count_args = count($form_state['build_info']['args'][0]);
+  for ($i = 0; $i < $count_args; $i++) {
+    // вывод этапов выполнения, если есть
     if (isset($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'])) {
       $step_complete = $form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'];
 
       $step_to_do = '<br>' . $form_state['build_info']['args'][0][0]->field_detailed['und'][$step_complete]['value'];
     }
-    else { $step_to_do = ''; }
-// creating title checkbox
+    else {
+      $step_to_do = '';
+    }
+    // creating title checkbox
     if ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 0) {
-      $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name'] . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . $step_to_do;
+      $title_check = l($form_state['build_info']['args'][0][$i]->title,
+        'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name']
+        . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . $step_to_do;
     }
     elseif ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 1) {
       $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid) . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name'] . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'] . ' <b>done</b>';
@@ -60,7 +63,7 @@ function my_todo_page_form($form, &$form_state) {
 
     $form['check_to-do' . $i] = array(
       '#type' => 'checkbox',
-      '#title' => t($title_check),
+      '#title' => $title_check,
       '#return_value' => $form_state['build_info']['args'][0][$i]->nid,
     );
 
@@ -69,7 +72,7 @@ function my_todo_page_form($form, &$form_state) {
 
   $form['submit'] = array(
     '#type' => 'submit',
-    '#value' => t('Selekt'),
+    '#value' => t('Select'),
   );
 
   // dpm($form_state);
@@ -78,11 +81,10 @@ function my_todo_page_form($form, &$form_state) {
 
 /**
  * Implements hook_forms().
- *
  */
 function my_todo_forms($form_id,$args) {
   $forms = array();
-  if (strpos($form_id,'my_todo_page_form') === 0) {
+  if (strpos($form_id, 'my_todo_page_form') === 0) {
     $forms[$form_id] = array(
       'callback' => 'my_todo_page_form',
       'callback arguments' => $args,
@@ -93,11 +95,10 @@ function my_todo_forms($form_id,$args) {
 
 /**
  * Creating form_submit
- *
  */
 function my_todo_page_form_submit($form, &$form_state) {
   foreach($form_state['my_todo_chekers'] as $key => $val) {
-    if(isset($form_state['my_todo_chekers'][$key]) && $form_state['values'][$key]) {
+    if (isset($form_state['my_todo_chekers'][$key]) && $form_state['values'][$key]) {
       if ($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] == count(isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) || !isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) {
         db_merge('field_data_field_status')
           ->key(array('entity_id' => $form_state['values'][$key]))
@@ -117,8 +118,7 @@ function my_todo_page_form_submit($form, &$form_state) {
 }
 
 /**
- * Creating custom page to-do's
- *
+ * Creating custom page to-do's.
  */
 function todo_list_render() {
   $nodes = node_load_multiple(array(), array('type' => 'to_do', 'status' => 1));
@@ -162,12 +162,12 @@ function todo_list_render() {
   );
   $output[] = drupal_get_form('my_todo_page_form', $result_array_nodes_long);
 
-$q = 0;
+  $q = 0;
   foreach ($result_array_nodes as $key => $value) {
     $output[] = array(
-    '#markup' => format_date($value[0]->field_date_task['und'][0]['value'], 'custom', 'j M Y')
+      '#markup' => format_date($value[0]->field_date_task['und'][0]['value'], 'custom', 'j M Y')
     );
-    $output[] = drupal_get_form('my_todo_page_form'.$q, $value);
+    $output[] = drupal_get_form('my_todo_page_form' . $q, $value);
     $q++;
   }
 
