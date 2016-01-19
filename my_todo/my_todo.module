@@ -22,6 +22,7 @@ function my_todo_menu() {
     ->condition('t.vid', 2)
     ->execute()
     ->fetchAll();
+
   foreach ($list as $value) {
     $items['todo_list/' . $value->name] = array(
       'type' => MENU_LOCAL_TASK,
@@ -39,45 +40,70 @@ function my_todo_menu() {
  * Creating form.
  */
 function my_todo_page_form($form, &$form_state) {
-  // generation checkbox's
+  $wrapper_form = mt_rand(100, 999);
+  $form['#prefix'] = '<div id="' . $wrapper_form . '">';
+  $form['#suffix'] = '</div>';
+  $form_state['submitted'] = TRUE;
+  $form_state['executed'] = TRUE;
+  $taxonomy_todo = taxonomy_term_load_multiple(array(), array('vid' => '2'));
+
+
+// генерирование чекбоксов
   $count_args = count($form_state['build_info']['args'][0]);
   for ($i = 0; $i < $count_args; $i++) {
-    // вывод этапов выполнения, если есть
-    if (isset($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'])) {
-      $step_complete = $form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'];
+    $node = node_load($form_state['build_info']['args'][0][$i]['nid']);
+    $form_state['my_todo_node'][] = $node;
 
-      $step_to_do = '<br>' . $form_state['build_info']['args'][0][0]->field_detailed['und'][$step_complete]['value'];
+// вывод этапов выполнения, если есть
+    if (isset($node->field_step_complete['und'][0]['value']) && isset($node->field_detailed['und'])) {
+      $step_complete = $node->field_step_complete['und'][0]['value'];
+      $percentage = (100 / count($node->field_detailed['und'])) * $step_complete;
+      $step_to_do = ', done - ' . (int) $percentage . '%<br>' . $node->field_detailed['und'][$step_complete]['value'];
     }
     else {
       $step_to_do = '';
     }
 
-    // creating title checkbox
-    $title_check = l($form_state['build_info']['args'][0][$i]->title, 'node/' . $form_state['build_info']['args'][0][$i]->nid)
-      . ' (' . $form_state['build_info']['args'][0][$i]->field_subject['und'][0]['t_name']
-      . ') - ' . $form_state['build_info']['args'][0][$i]->field_importantly['und'][0]['value'];
-    if ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 0) {
+// создание тайтлов чекбок
+    $title_check = l($node->title, 'node/' . $node->nid)
+      . ' (' . $taxonomy_todo[$node->field_subject['und'][0]['tid']]->name
+      . ') - ' . $node->field_importantly['und'][0]['value'];
+    if ($node->field_status['und'][0]['value'] == 0) {
        $title_check .= $step_to_do;
     }
-    elseif ($form_state['build_info']['args'][0][$i]->field_status['und'][0]['value'] == 1) {
-      $title_check .= ' <b>done</b>';
+    elseif ($node->field_status['und'][0]['value'] == 1) {
+      $title_check = '<del>' . $title_check . '</del>';
     }
 
-    $form['check_to-do' . $i] = array(
+    $form[$node->nid] = array(
       '#type' => 'checkbox',
       '#title' => $title_check,
-      '#return_value' => $form_state['build_info']['args'][0][$i]->nid,
+      '#return_value' => $node->nid,
+      '#ajax' => array(
+        'callback' => '',
+        'wrapper' => $wrapper_form,
+        'trigger_as' => array('name' => 'submit'),
+    ),
+
     );
 
-    $form_state['my_todo_chekers']['check_to-do' . $i] = $form_state['build_info']['args'][0][$i]->nid;
+    $form_state['my_todo_chekers'][$node->nid] = $node->nid;
   }
+
 
   $form['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Select'),
+    '#ajax' => array(
+      'callback' => 'my_todo_page_form_submit_ajax',
+      'method' => 'replace',
+      'wrapper' => $wrapper_form,
+    ),
+    '#attributes' => array(
+      'class' => array('js-hide'),
+    ),
   );
-
-  // dpm($form_state);
+// dpm($form_state);
   return ($form);
 }
 
@@ -95,84 +121,152 @@ function my_todo_forms($form_id,$args) {
   return $forms;
 }
 
+function my_todo_page_form_submit_ajax($form, &$form_state) {
+
+  $i = 0;
+  foreach($form_state['my_todo_chekers'] as $key => $val) {
+    if (isset($form_state['my_todo_node'][$i]->field_detailed['und'])) {
+      $count_field_detailed = count($form_state['my_todo_node'][$i]->field_detailed['und']) - 1;
+    }
+    if (isset($form_state['my_todo_chekers'][$key]) == ($form_state['values'][$key])) {
+// Когда задача выполнена
+      if (!isset($form_state['my_todo_node'][$i]->field_detailed['und']) || ($form_state['my_todo_node'][$i]->field_step_complete['und'][0]['value'] == $count_field_detailed && isset($form_state['my_todo_node'][$i]->field_detailed['und']))) {
+// запись статуса выполнения в БД
+        $node = node_load($form_state['values'][$key]);
+        $node->field_status['und'][0]['value'] = 1;
+        node_save($node);
+// формирование новых значений для формы (пункт выполнен)
+        $new_value_node = node_load($form_state['values'][$key]);
+        $checker_id = $form_state['values'][$key];
+        $tax_term[] = $new_value_node->field_subject['und'][0]['tid'];
+        $tax_name = taxonomy_term_load_multiple($tax_term, array('vid' => '2'));
+        $form["$checker_id"]['#title'] = '<del>' . l($new_value_node->title, 'node/' . $new_value_node->nid) . ' (' . $tax_name[$new_value_node->field_subject['und'][0]['tid']]->name . ') - ' . $new_value_node->field_importantly['und'][0]['value'] . '</del>';
+        $form["$checker_id"]['#checked'] = FALSE;
+      }
+// когда задача имеет законченный этап
+      else {
+        $field_step_complete_new_value = $form_state['my_todo_node'][$i]->field_step_complete['und'][0]['value'] + 1;
+        $node = node_load($form_state['values'][$key]);
+        $node->field_step_complete['und'][0]['value'] = $field_step_complete_new_value;
+        node_save($node);
+// формирование новых значений для формы (с выводом следующего этапа)
+        $new_value_node = node_load($form_state['values'][$key]);
+        $checker_id = $form_state['values'][$key];
+        $tax_term[] = $new_value_node->field_subject['und'][0]['tid'];
+        $tax_name = taxonomy_term_load_multiple($tax_term, array('vid' => '2'));
+        $step_complete = $new_value_node->field_step_complete['und'][0]['value'];
+        $percentage = (100 / count($new_value_node->field_detailed['und'])) * $step_complete;
+        $step_to_do = ', done - ' . (int) $percentage . '%<br>' . $new_value_node->field_detailed['und'][$step_complete]['value'];
+        $form["$checker_id"]['#title'] = l($new_value_node->title, 'node/' . $new_value_node->nid) . ' (' . $tax_name[$new_value_node->field_subject['und'][0]['tid']]->name . ') - ' . $new_value_node->field_importantly['und'][0]['value'] . $step_to_do;
+        $form["$checker_id"]['#checked'] = FALSE;
+
+      }
+    $i++;
+    }
+    else {
+      $checker_id = $form_state['values'][$key];
+      $form["$checker_id"]['#title'] = $form["$checker_id"]['#title'];
+    }
+  }
+$form_state['rebuild'] = TRUE;
+dpm($form);
+  return $form;
+}
 /**
  * Creating form_submit
  */
 function my_todo_page_form_submit($form, &$form_state) {
+
+  $i = 0;
   foreach($form_state['my_todo_chekers'] as $key => $val) {
-    if (isset($form_state['my_todo_chekers'][$key]) && $form_state['values'][$key]) {
-      //FIXME - count(isset( - what?
-      if ($form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] == count(isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) || !isset($form_state['build_info']['args'][0][0]->field_detailed['und'])) {
-        db_merge('field_data_field_status')
-          ->key(array('entity_id' => $form_state['values'][$key]))
-          ->fields(array('field_status_value' => '1'))
-          ->execute();
-      }
-      else {
-        $field_step_complete_new_value = $form_state['build_info']['args'][0][0]->field_step_complete['und'][0]['value'] + 1;
-        db_merge('field_data_field_step_complete')
-          ->key(array('entity_id' => $form_state['values'][$key]))
-          ->fields(array('field_step_complete_value' => $field_step_complete_new_value))
-          ->execute();
-      }
-      drupal_set_message($form_state['values'][$key]);
+    if (isset($form_state['my_todo_node'][$i]->field_detailed)) {
+      $count_field_detailed = count($form_state['my_todo_node'][$i]->field_detailed['und']) - 1;
     }
+    if (isset($form_state['my_todo_chekers'][$key]) == ($form_state['values'][$key])) {
+// Когда задача выполнена
+      if (!isset($form_state['my_todo_node'][$i]->field_detailed['und']) || ($form_state['my_todo_node'][$i]->field_step_complete['und'][0]['value'] == $count_field_detailed && isset($form_state['my_todo_node'][$i]->field_detailed['und']))) {
+// запись статуса выполнения в БД
+        $node = node_load($form_state['values'][$key]);
+        $node->field_status['und'][0]['value'] = 1;
+        node_save($node);
+      }
+// когда задача имеет законченный этап
+      else {
+        $field_step_complete_new_value = $form_state['my_todo_node'][$i]->field_step_complete['und'][0]['value'] + 1;
+        $node = node_load($form_state['values'][$key]);
+        $node->field_step_complete['und'][0]['value'] = $field_step_complete_new_value;
+        node_save($node);
+      }
+    }
+    $i++;
   }
+  $form_state['my_todo'] = 1;
+  return $form;
 }
 
 /**
  * Creating custom page to-do's.
  */
 function todo_list_render() {
-  $nodes = node_load_multiple(array(), array('type' => 'to_do', 'status' => 1));
-  $taxonomy_todo = taxonomy_term_load_multiple(array(), array('vid' => '2'));
+  $nodes = node_load_multiple(array(), array('type' => 'to_do', 'status' => 1), TRUE);
   $value_date = FALSE;
 
-  foreach ($nodes as $nid => $value) {
-    if ($value->field_date_task['und'][0]['value'] != $value->field_date_task['und'][0]['value2']) {
-      foreach ($taxonomy_todo as $tid => $value_t) {
-        if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
-          $value->field_subject['und'][0]['t_name'] = $value_t->name;
-        }
-      }
+// формирование массива дат для фильтрации запросов в форме
+  $query = db_select('field_data_field_date_task', 'd')
+    ->fields('d', array('entity_id', 'field_date_task_value', 'field_date_task_value2'))
+    ->execute()
+    ->fetchAll();
 
-      $result_array_nodes_long[] = $value;
+  $to_do_fields_date = $query;
+
+  $key_date = '';
+  $counter_a = -1;
+
+  foreach ($to_do_fields_date as $key) {
+// массив дат для списка долгих задач
+    if ($key->field_date_task_value != $key->field_date_task_value2) {
+      $array_date_to_nodes_long[] = array(
+        'nid' => $key->entity_id,
+        'field_date_task_value' => $key->field_date_task_value,
+        'field_date_task_value2' => $key->field_date_task_value2
+      );
     }
-
-    if ($value->field_date_task['und'][0]['value'] == $value->field_date_task['und'][0]['value2']) {
-      if ($value_date != $value->field_date_task['und'][0]['value']) {
-        $value_date = $value->field_date_task['und'][0]['value'];
-        foreach ($taxonomy_todo as $tid => $value_t) {
-          if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
-            $value->field_subject['und'][0]['t_name'] = $value_t->name;
-          }
-        }
-        $result_array_nodes[$value_date][] = $value;
+// массив дат для обычных задач
+    else {
+      if ($key_date == $key->field_date_task_value) {
+        $array_date_to_nodes[$counter_a][] = array(
+          'nid' => $key->entity_id,
+          'field_date_task_value' => $key->field_date_task_value,
+          'field_date_task_value2' => $key->field_date_task_value2
+        );
       }
       else {
-        foreach ($taxonomy_todo as $tid => $value_t) {
-          if ($value_t->tid == $value->field_subject['und'][0]['tid']) {
-            $value->field_subject['und'][0]['t_name'] = $value_t->name;
-          }
-        }
-        $result_array_nodes[$value_date][] = $value;
+        $counter_a++;
+        $key_date = $key->field_date_task_value;
+        $array_date_to_nodes[$counter_a][] = array(
+          'nid' => $key->entity_id,
+          'field_date_task_value' => $key->field_date_task_value,
+          'field_date_task_value2' => $key->field_date_task_value2
+        );
       }
     }
   }
 
+// рендер форм
   $output[] = array(
     '#markup' => '<b>Duration of the project</b>'
   );
-  $output[] = drupal_get_form('my_todo_page_form', $result_array_nodes_long);
+  $output[] = drupal_get_form('my_todo_page_form', $array_date_to_nodes_long);
 
   $q = 0;
-  foreach ($result_array_nodes as $key => $value) {
+  foreach ($array_date_to_nodes as $key => $value) {
     $output[] = array(
-      '#markup' => format_date($value[0]->field_date_task['und'][0]['value'], 'custom', 'j M Y')
+      '#markup' => format_date($value[0]['field_date_task_value'], 'custom', 'j M Y')
     );
     $output[] = drupal_get_form('my_todo_page_form' . $q, $value);
     $q++;
   }
 
+  // dpm($array_date_to_nodes_long); // FIXME
   return $output;
 }
