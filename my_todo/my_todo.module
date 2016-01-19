@@ -103,7 +103,7 @@ function my_todo_page_form($form, &$form_state) {
       'class' => array('js-hide'),
     ),
   );
-// dpm($form_state);
+
   return ($form);
 }
 
@@ -169,7 +169,7 @@ function my_todo_page_form_submit_ajax($form, &$form_state) {
     }
   }
 $form_state['rebuild'] = TRUE;
-dpm($form);
+
   return $form;
 }
 /**
@@ -267,6 +267,6 @@ function todo_list_render() {
     $q++;
   }
 
-  // dpm($array_date_to_nodes_long); // FIXME
+
   return $output;
 }
